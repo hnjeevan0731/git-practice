@@ -193,6 +193,33 @@ def test_create_user_database_failure(client):
     mock_db.close.assert_called_once()
 
 
+def test_create_user_refresh_failure(client):
+    mock_db = MagicMock()
+
+    # Simulate failure while refreshing the saved user.
+    mock_db.refresh.side_effect = Exception("Refresh failed")
+
+    with patch("routes.users.SessionLocal", return_value=mock_db):
+        response = client.post(
+            "/users",
+            json={
+                "name": "Rahul",
+                "email": "rahul.refresh@example.com"
+            }
+        )
+
+    assert response.status_code == 500
+    assert response.get_json()["message"] == "Database error"
+
+    # Commit succeeded, but refresh failed.
+    mock_db.commit.assert_called_once()
+    mock_db.refresh.assert_called_once()
+
+    # Verify error handling and cleanup.
+    mock_db.rollback.assert_called_once()
+    mock_db.close.assert_called_once()
+
+
 def test_create_user_add_failure(client):
     mock_db = MagicMock()
 
@@ -317,6 +344,22 @@ def test_create_user_with_null_name(client):
     assert response.status_code == 400
     assert response.get_json()["message"] == "Invalid data"
     mock_session_factory.assert_not_called()
+
+
+def test_create_user_with_missing_name(client):
+    with patch("routes.users.SessionLocal") as mock_session_factory:
+        response = client.post(
+            "/users",
+            json={
+                "email": "rahul@example.com"
+            }
+        )
+
+    assert response.status_code == 400
+    assert response.get_json()["message"] == "Invalid data"
+    mock_session_factory.assert_not_called()
+
+
 
 def test_create_user_with_malformed_json(client):
     response = client.post(
