@@ -318,6 +318,14 @@ def test_create_user_with_null_name(client):
     assert response.get_json()["message"] == "Invalid data"
     mock_session_factory.assert_not_called()
 
+def test_create_user_with_malformed_json(client):
+    response = client.post(
+        "/users",
+        data='{"name": "Rahul", "email":',
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
 
 def test_update_user_with_empty_name(client):
     with patch("routes.users.SessionLocal") as mock_session_factory:
