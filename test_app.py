@@ -6,6 +6,7 @@ from schemas import UserCreate
 import pytest
 from database import SessionLocal
 from models import User
+from sqlalchemy.exc import IntegrityError
 
 @pytest.fixture
 def client():
@@ -85,10 +86,13 @@ def test_update_user_with_invalid_email(client):
     mock_session_factory.assert_not_called()
 
 
-def test_create_user_success(client):
 
+def test_create_user_success(client):
     # Prepare a fake database session.
     mock_db = MagicMock()
+
+    # Simulate that the email does not already exist.
+    mock_db.query.return_value.filter_by.return_value.first.return_value = None
 
     with patch("routes.users.SessionLocal", return_value=mock_db):
         response = client.post(
@@ -98,6 +102,7 @@ def test_create_user_success(client):
                 "email": "rahul.test@example.com"
             }
         )
+
 
     # Verify the successful HTTP response.
     assert response.status_code == 201
@@ -170,6 +175,7 @@ def test_update_user_database_failure(client):
 
 def test_create_user_database_failure(client):
     mock_db = MagicMock()
+    mock_db.query.return_value.filter_by.return_value.first.return_value = None
 
     # Simulate a database failure during commit.
     mock_db.commit.side_effect = Exception("Database unavailable")
@@ -195,6 +201,7 @@ def test_create_user_database_failure(client):
 
 def test_create_user_refresh_failure(client):
     mock_db = MagicMock()
+    mock_db.query.return_value.filter_by.return_value.first.return_value = None
 
     # Simulate failure while refreshing the saved user.
     mock_db.refresh.side_effect = Exception("Refresh failed")
@@ -220,8 +227,35 @@ def test_create_user_refresh_failure(client):
     mock_db.close.assert_called_once()
 
 
+def test_create_user_with_duplicate_email(client):
+    existing_user = SimpleNamespace(
+        id=1,
+        name="Rahul",
+        email="rahul@example.com"
+    )
+
+    mock_db = MagicMock()
+    mock_db.query.return_value.filter_by.return_value.first.return_value = existing_user
+
+    with patch("routes.users.SessionLocal", return_value=mock_db):
+        response = client.post(
+            "/users",
+            json={
+                "name": "Jeevan",
+                "email": "rahul@example.com"
+            }
+        )
+
+    assert response.status_code == 409
+    assert response.get_json()["message"] == "Email already exists"
+    mock_db.add.assert_not_called()
+    mock_db.commit.assert_not_called()
+    mock_db.close.assert_called_once()
+
+
 def test_create_user_add_failure(client):
     mock_db = MagicMock()
+    mock_db.query.return_value.filter_by.return_value.first.return_value = None
 
     # Simulate a failure while adding the new user.
     mock_db.add.side_effect = Exception("Database unavailable")
@@ -392,18 +426,35 @@ def test_update_user_with_whitespace_name(client):
     assert response.get_json()["message"] == "Invalid data"
     mock_session_factory.assert_not_called()
 
+
 def test_create_user_strips_name_whitespace(client):
-    response = client.post(
-        "/users",
-        json={
-            "name": "  Jeevan  ",
-            "email": "jeevan@example.com",
-            "age": 22
-        }
-    )
+    mock_db = MagicMock()
+
+    # Simulate that the email does not already exist.
+    mock_db.query.return_value.filter_by.return_value.first.return_value = None
+
+    # Simulate the saved user's fields after refresh.
+    def refresh_user(user):
+        user.id = 1
+
+    mock_db.refresh.side_effect = refresh_user
+
+    with patch("routes.users.SessionLocal", return_value=mock_db):
+        response = client.post(
+            "/users",
+            json={
+                "name": "  Jeevan  ",
+                "email": "jeevan@example.com",
+                "age": 22
+            }
+        )
 
     assert response.status_code == 201
     assert response.json["name"] == "Jeevan"
+    mock_db.add.assert_called_once()
+    mock_db.commit.assert_called_once()
+    mock_db.close.assert_called_once()
+
 
 def test_update_user_with_null_email(client):
     response = client.patch(
@@ -491,3 +542,30 @@ def test_post_user_with_real_database(client):
                 db.commit()
         finally:
             db.close()
+
+def test_create_user_integrity_error(client):
+    mock_db = MagicMock()
+
+    # Simulate no existing user with this email.
+    mock_db.query.return_value.filter_by.return_value.first.return_value = None
+
+    # Simulate a duplicate-email error during commit.
+    mock_db.commit.side_effect = IntegrityError(
+        None, None, Exception("duplicate email")
+    )
+
+    # Send a POST request using the mocked database.
+    with patch("routes.users.SessionLocal", return_value=mock_db):
+        response = client.post(
+            "/users",
+            json={
+                "name": "Jeevan",
+                "email": "jeevan-race-test@example.com"
+            }
+        )
+
+    # Verify the API response and database cleanup.
+    assert response.status_code == 409
+    assert response.get_json()["message"] == "Email already exists"
+    mock_db.rollback.assert_called_once()
+    mock_db.close.assert_called_once()

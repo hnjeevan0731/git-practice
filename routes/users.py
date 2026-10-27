@@ -3,6 +3,7 @@ from database import SessionLocal
 from schemas import UserCreate
 from pydantic import ValidationError
 from schemas import UserUpdate
+from sqlalchemy.exc import IntegrityError
 from models import User
 
 users_bp = Blueprint("users", __name__)
@@ -43,6 +44,11 @@ def create_user():
     db = SessionLocal()
 
     try:
+        existing_user = db.query(User).filter_by(email=user_data.email).first()
+
+        if existing_user:
+            return jsonify({"message": "Email already exists"}), 409
+
         new_user = User(
             name=user_data.name,
             email=user_data.email
@@ -56,6 +62,10 @@ def create_user():
             "name": new_user.name,
             "email": new_user.email
         }), 201
+
+    except IntegrityError:
+        db.rollback()
+        return jsonify({"message": "Email already exists"}), 409
 
     except Exception:
         db.rollback()
