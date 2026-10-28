@@ -550,8 +550,45 @@ def test_create_user_integrity_error(client):
     mock_db.query.return_value.filter_by.return_value.first.return_value = None
 
     # Simulate a duplicate-email error during commit.
+    mock_orig = Exception("duplicate email")
+    mock_orig.diag = SimpleNamespace(
+        constraint_name="users_email_unique"
+    )
+
     mock_db.commit.side_effect = IntegrityError(
-        None, None, Exception("duplicate email")
+        None, None, mock_orig
+    )
+
+    # Send a POST request using the mocked database.
+    with patch("routes.users.SessionLocal", return_value=mock_db):
+        response = client.post(
+            "/users",
+            json={
+                "name": "Jeevan",
+                "email": "jeevan-race-test@example.com"
+            }
+        )
+
+    # Verify the API response and database cleanup.
+    assert response.status_code == 409
+    assert response.get_json()["message"] == "Email already exists"
+    mock_db.rollback.assert_called_once()
+    mock_db.close.assert_called_once()
+
+def test_create_user_other_integrity_error(client):
+    mock_db = MagicMock()
+
+    # Simulate no existing user with this email.
+    mock_db.query.return_value.filter_by.return_value.first.return_value = None
+
+    # Simulate a duplicate-email error during commit.
+    mock_orig = Exception("duplicate email")
+    mock_orig.diag = SimpleNamespace(
+        constraint_name="users_email_unique"
+    )
+
+    mock_db.commit.side_effect = IntegrityError(
+        None, None, mock_orig
     )
 
     # Send a POST request using the mocked database.

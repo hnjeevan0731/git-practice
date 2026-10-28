@@ -63,9 +63,13 @@ def create_user():
             "email": new_user.email
         }), 201
 
-    except IntegrityError:
+    except IntegrityError as e:
         db.rollback()
-        return jsonify({"message": "Email already exists"}), 409
+
+        if getattr(getattr(e.orig, "diag", None), "constraint_name", None) == "users_email_unique":
+            return jsonify({"message": "Email already exists"}), 409
+
+        return jsonify({"message": "Database integrity error"}), 500
 
     except Exception:
         db.rollback()
