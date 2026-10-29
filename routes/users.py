@@ -5,6 +5,7 @@ from pydantic import ValidationError
 from schemas import UserUpdate
 from sqlalchemy.exc import IntegrityError
 from models import User
+import logging
 
 users_bp = Blueprint("users", __name__)
 
@@ -64,6 +65,7 @@ def create_user():
         }), 201
 
     except IntegrityError as e:
+        logging.exception("Database integrity error")
         db.rollback()
 
         if getattr(getattr(e.orig, "diag", None), "constraint_name", None) == "users_email_unique":
@@ -72,6 +74,7 @@ def create_user():
         return jsonify({"message": "Database integrity error"}), 500
 
     except Exception:
+        logging.exception("Database operation failed")
         db.rollback()
         return jsonify({"message": "Database error"}), 500
 

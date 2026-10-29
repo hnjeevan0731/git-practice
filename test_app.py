@@ -173,7 +173,7 @@ def test_update_user_database_failure(client):
     mock_db.rollback.assert_called_once()
     mock_db.close.assert_called_once()
 
-def test_create_user_database_failure(client):
+def test_create_user_database_failure(client, caplog):
     mock_db = MagicMock()
     mock_db.query.return_value.filter_by.return_value.first.return_value = None
 
@@ -192,6 +192,7 @@ def test_create_user_database_failure(client):
     # Verify the API handles the failure.
     assert response.status_code == 500
     assert response.get_json()["message"] == "Database error"
+    assert "Database operation failed" in caplog.text
 
     # Verify commit was attempted, then rollback and cleanup occurred.
     mock_db.commit.assert_called_once()
@@ -543,7 +544,7 @@ def test_post_user_with_real_database(client):
         finally:
             db.close()
 
-def test_create_user_integrity_error(client):
+def test_create_user_integrity_error(client, caplog):
     mock_db = MagicMock()
 
     # Simulate no existing user with this email.
@@ -572,6 +573,7 @@ def test_create_user_integrity_error(client):
     # Verify the API response and database cleanup.
     assert response.status_code == 409
     assert response.get_json()["message"] == "Email already exists"
+    assert "Database integrity error" in caplog.text
     mock_db.rollback.assert_called_once()
     mock_db.close.assert_called_once()
 
