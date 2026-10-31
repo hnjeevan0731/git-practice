@@ -2,6 +2,12 @@ from flask import Flask, request, jsonify
 from database import SessionLocal
 from models import User
 from routes.users import users_bp
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+)
 
 app = Flask(__name__)
 
